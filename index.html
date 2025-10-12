@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes processing-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+        }
+        .processing { animation: processing-pulse 1.5s infinite; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans">
+
+    <!-- Assistant Button -->
+    <div class="fixed top-6 right-6 z-50">
+        <button id="assistant-button" class="bg-blue-600 text-white rounded-full p-4 shadow-lg hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+            <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+        </button>
+    </div>
+    <div id="status-indicator" class="fixed top-24 right-6 z-50 text-center text-xs text-slate-600 mt-1 font-medium bg-white/50 px-2 py-1 rounded hidden"></div>
+
+    <!-- Main Page Content -->
+    <header class="bg-white/80 backdrop-blur-md sticky top-0 z-40 shadow-sm">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <a href="#" class="text-2xl font-bold text-slate-900">Aura Energy</a>
+            <div class="hidden md:flex space-x-8 items-center">
+                <a href="#" class="text-slate-600 hover:text-blue-600 transition-colors">Solutions</a>
+                <a href="#" class="text-slate-600 hover:text-blue-600 transition-colors">Technology</a>
+                <a href="#" class="text-slate-600 hover:text-blue-600 transition-colors">About Us</a>
+                <a href="#" class="bg-slate-800 text-white px-5 py-2 rounded-full hover:bg-slate-900 transition-colors">Contact</a>
+            </div>
+        </nav>
+    </header>
+    <section class="relative bg-cover bg-center text-white" style="background-image: url('https://placehold.co/1600x800/e2e8f0/334155?text=Clean+Energy+Grid')">
+        <div class="bg-black/50 min-h-[60vh] flex items-center">
+            <div class="container mx-auto px-6 text-center">
+                <h1 class="text-4xl md:text-6xl font-extrabold mb-4">Powering a Sustainable Tomorrow</h1>
+                <p class="text-lg md:text-xl max-w-3xl mx-auto mb-8">Aura Energy is pioneering grid-scale energy solutions with cutting-edge solar and wind technology.</p>
+                <a href="page1.html" class="bg-blue-600 text-white px-8 py-4 rounded-full text-lg font-semibold hover:bg-blue-700 transition-colors">Learn More</a>
+            </div>
+        </div>
+    </section>
+    <main id="page-content" class="container mx-auto px-6 py-16">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-slate-900">Our Core Technologies</h2>
+        </div>
+        <div class="grid md:grid-cols-3 gap-8">
+            <div class="bg-white p-8 rounded-lg shadow-md"><h3 class="text-xl font-bold mb-2">Advanced Photovoltaics</h3><p>Our solar panels utilize next-gen perovskite materials.</p></div>
+            <div class="bg-white p-8 rounded-lg shadow-md"><h3 class="text-xl font-bold mb-2">Offshore Wind Turbines</h3><p>We deploy floating offshore platforms.</p></div>
+            <div class="bg-white p-8 rounded-lg shadow-md"><h3 class="text-xl font-bold mb-2">Grid-Scale Battery Storage</h3><p>Our lithium-ion battery arrays ensure a stable supply.</p></div>
+        </div>
+    </main>
+    <footer class="bg-slate-800 text-slate-300 py-8"><div class="container mx-auto px-6 text-center"><p>&copy; 2025 Aura Energy. All Rights Reserved.</p></div></footer>
+
+    <script>
+        const assistantButton = document.getElementById('assistant-button');
+        const statusIndicator = document.getElementById('status-indicator');
+        const micIcon = document.getElementById('mic-icon');
+
+        let isSessionActive = false;
+        let isProcessing = false;
+        let audioPlayer = new Audio();
+        let mediaRecorder;
+        let audioChunks = [];
+        let silenceTimeout;
+        let realtimeWebSocket = null;
+        let clientSecret = null;
+        let preloadedSummaryAudio = null;
+        let isPreloaded = false;
+        let preloadedSessionInfo = null;
+        let isSessionPreloaded = false;
+
+        // Preload summary audio and session on page load
+        async function preloadSummary() {
+            try {
+                console.log("[PRELOAD] Starting to preload summary audio...");
+                const response = await fetch('http://127.0.0.1:5000/summarize-and-speak', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page_name: 'index.html' }),
+                });
+
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                preloadedSummaryAudio = audioUrl;
+                isPreloaded = true;
+                console.log("[PRELOAD] ✅ Summary audio preloaded successfully!");
+                
+                // Also preload the session
+                await preloadSession();
+            } catch (error) {
+                console.error("[PRELOAD] Error preloading summary:", error);
+                isPreloaded = false;
+            }
+        }
+
+        async function preloadSession() {
+            try {
+                console.log("[PRELOAD] Starting to preload session...");
+                const response = await fetch('http://127.0.0.1:5000/create-talk-session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page_name: 'index.html' }),
+                });
+
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const data = await response.json();
+                preloadedSessionInfo = {
+                    client_secret: data.client_secret,
+                    model: data.model
+                };
+                isSessionPreloaded = true;
+                console.log("[PRELOAD] ✅ Session preloaded successfully!");
+            } catch (error) {
+                console.error("[PRELOAD] Error preloading session:", error);
+                isSessionPreloaded = false;
+            }
+        }
+
+        // Preload on page load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                preloadSummary();
+            }, 1000); // Wait 1 second after page load to avoid blocking
+        });
+
+        assistantButton.addEventListener('click', () => {
+            if (isSessionActive) {
+                stopConversation();
+            } else if (!isProcessing) {
+                getAndPlaySummary('index.html');
+            }
+        });
+
+        function updateUI(statusText, isLive = false, processing = false) {
+            isProcessing = processing;
+            isSessionActive = isLive;
+
+            statusIndicator.textContent = statusText;
+            statusIndicator.classList.toggle('hidden', !statusText);
+
+            assistantButton.classList.toggle('bg-red-600', isLive);
+            assistantButton.classList.toggle('hover:bg-red-700', isLive);
+            assistantButton.classList.toggle('bg-blue-600', !isLive);
+            assistantButton.classList.toggle('hover:bg-blue-700', !isLive);
+            assistantButton.classList.toggle('processing', processing && !isLive);
+        }
+
+        async function getAndPlaySummary(pageName) {
+            // Use preloaded audio if available for instant playback
+            if (isPreloaded && preloadedSummaryAudio) {
+                console.log("[PRELOAD] Using preloaded summary audio - instant playback!");
+                updateUI("Speaking summary...", true, false);
+                audioPlayer.src = preloadedSummaryAudio;
+                audioPlayer.play();
+
+                audioPlayer.onplaying = () => {
+                    updateUI("Speaking summary...", true, false);
+                };
+
+                // FIX: Use addEventListener for the 'ended' event to ensure it fires reliably.
+                // The { once: true } option automatically removes the listener after it runs.
+                audioPlayer.addEventListener('ended', () => {
+                    console.log("Summary finished. Creating Realtime session.");
+                    createRealtimeSession();
+                }, { once: true });
+            } else {
+                // Fallback: fetch summary if not preloaded
+                updateUI("Summarizing...", false, true);
+                try {
+                    const response = await fetch('http://127.0.0.1:5000/summarize-and-speak', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ page_name: pageName }),
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    
+                    const audioBlob = await response.blob();
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    audioPlayer.src = audioUrl;
+                    audioPlayer.play();
+
+                    audioPlayer.onplaying = () => {
+                        updateUI("Speaking summary...", true, false);
+                    };
+
+                    audioPlayer.addEventListener('ended', () => {
+                        console.log("Summary finished. Creating Realtime session.");
+                        createRealtimeSession();
+                    }, { once: true });
+
+                } catch (error) {
+                    console.error("Error fetching or playing summary:", error);
+                    updateUI("Error");
+                }
+            }
+        }
+
+        async function createRealtimeSession() {
+            // Use preloaded session if available for faster connection
+            if (isSessionPreloaded && preloadedSessionInfo) {
+                console.log("[PRELOAD] Using preloaded session - instant connection!");
+                clientSecret = preloadedSessionInfo.client_secret;
+                const model = preloadedSessionInfo.model;
+                
+                console.log("Realtime session ready. Client secret:", clientSecret);
+                console.log("Realtime session ready. Model:", model);
+                console.log("Connecting to WebSocket...");
+                await connectToRealtimeSession(model);
+            } else {
+                // Fallback: create session if not preloaded
+                updateUI("Creating session...", false, true);
+                try {
+                    const response = await fetch('http://127.0.0.1:5000/create-talk-session', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ page_name: 'index.html' }),
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    
+                    const data = await response.json();
+                    clientSecret = data.client_secret;
+                    const model = data.model;
+                    
+                    console.log("Realtime session created. Client secret:", clientSecret);
+                    console.log("Realtime session created. Model:", model);
+                    console.log("Realtime session created. Connecting to WebSocket...");
+                    await connectToRealtimeSession(model);
+                    
+                } catch (error) {
+                    console.error("Error creating Realtime session:", error);
+                    updateUI("Error creating session");
+                }
+            }
+        }
+
+        async function connectToRealtimeSession(model) {
+            try {
+                const wsUrl = `ws://127.0.0.1:5000/ws/realtime`;
+                console.log("Connecting to WebSocket proxy:", wsUrl);
+                realtimeWebSocket = new WebSocket(wsUrl);
+                
+                realtimeWebSocket.onopen = () => {
+                    console.log("Connected to WebSocket proxy");
+                    // Send client_secret, model, and page_name to proxy for authentication
+                    realtimeWebSocket.send(JSON.stringify({
+                        client_secret: clientSecret,
+                        model: model,
+                        page_name: 'index.html'
+                    }));
+                    console.log("Sent client_secret, model, and page_name to proxy");
+                    // Note: Don't start listening yet - wait for session.updated event
+                };
+                
+                realtimeWebSocket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleRealtimeMessage(data);
+                };
+                
+                realtimeWebSocket.onclose = () => {
+                    console.log("Realtime WebSocket closed");
+                    updateUI("Session ended");
+                };
+                
+                realtimeWebSocket.onerror = (error) => {
+                    console.error("Realtime WebSocket error:", error);
+                    updateUI("Connection error");
+                };
+                
+            } catch (error) {
+                console.error("Error connecting to Realtime session:", error);
+                updateUI("Connection failed");
+            }
+        }
+
+        function handleRealtimeMessage(data) {
+            switch (data.type) {
+                case 'session.created':
+                    console.log("Session created successfully");
+                    break;
+                case 'session.updated':
+                    console.log("Session updated successfully");
+                    // Session is ready, start listening and init audio playback
+                    if (!outputAudioContext) {
+                        outputAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+                    }
+                    updateUI("Listening...", true, false);
+                    startContinuousAudioCapture();
+                    break;
+                case 'input_audio_buffer.speech_started':
+                    console.log("User started speaking");
+                    updateUI("Listening...", true, false);
+                    break;
+                case 'input_audio_buffer.speech_stopped':
+                    console.log("User stopped speaking");
+                    updateUI("Processing...", true, false);
+                    break;
+                case 'response.created':
+                    // Reset audio timing and queue for new response
+                    audioBufferQueue = [];
+                    if (outputAudioContext) {
+                        nextStartTime = outputAudioContext.currentTime + 0.15; // Slightly larger initial buffer
+                    }
+                    updateUI("Speaking...", true, false);
+                    break;
+                case 'response.audio_transcript.delta':
+                    // Log what the AI is saying
+                    if (data.delta) {
+                        console.log("AI speaking:", data.delta);
+                    }
+                    break;
+                case 'response.audio_transcript.done':
+                    // Log complete transcript
+                    if (data.transcript) {
+                        console.log("🗣️ AI (complete):", data.transcript);
+                    }
+                    break;
+                case 'conversation.item.input_audio_transcription.completed':
+                    // Log what user said
+                    if (data.transcript) {
+                        console.log("👤 You said:", data.transcript);
+                    }
+                    break;
+                case 'response.audio.delta':
+                    // Queue audio chunk for smoother playback
+                    if (data.delta) {
+                        audioBufferQueue.push(data.delta);
+                        if (!isProcessingQueue) {
+                            processAudioQueue();
+                        }
+                    }
+                    break;
+                case 'response.audio.done':
+                    console.log(`📊 Response complete. Queue: ${audioBufferQueue.length} chunks, Active: ${activeAudioSources.length} sources`);
+                    // Process any remaining chunks in queue
+                    if (audioBufferQueue.length > 0 && !isProcessingQueue) {
+                        processAudioQueue();
+                    }
+                    // Wait for all audio to finish playing
+                    const waitForCompletion = setInterval(() => {
+                        if (activeAudioSources.length === 0 && audioBufferQueue.length === 0 && !isProcessingQueue) {
+                            clearInterval(waitForCompletion);
+                            console.log("✅ All audio finished playing");
+                            updateUI("Listening...", true, false);
+                        }
+                    }, 100);
+                    break;
+                case 'error':
+                    console.error("Realtime API error:", data.error);
+                    updateUI("Error");
+                    break;
+                default:
+                    // Log other messages for debugging
+                    if (data.type.startsWith('response.audio')) {
+                        console.log("Received message:", data.type);
+                    }
+            }
+        }
+        
+        async function processAudioQueue() {
+            if (isProcessingQueue || audioBufferQueue.length === 0) return;
+            
+            isProcessingQueue = true;
+            
+            while (audioBufferQueue.length > 0) {
+                const base64Audio = audioBufferQueue.shift();
+                await playAudioChunk(base64Audio);
+                // Small delay between chunks to prevent overwhelming the audio context
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            
+            isProcessingQueue = false;
+        }
+        
+        async function playAudioChunk(base64Audio) {
+            try {
+                if (!outputAudioContext) {
+                    outputAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+                    nextStartTime = outputAudioContext.currentTime + 0.2; // Larger initial buffer
+                }
+                
+                // Decode base64 to Int16 PCM
+                const binaryString = atob(base64Audio);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                const pcm16 = new Int16Array(bytes.buffer);
+                
+                // Convert Int16 to Float32
+                const float32 = new Float32Array(pcm16.length);
+                for (let i = 0; i < pcm16.length; i++) {
+                    float32[i] = pcm16[i] / (pcm16[i] < 0 ? 0x8000 : 0x7FFF);
+                }
+                
+                // Create audio buffer
+                const audioBuffer = outputAudioContext.createBuffer(1, float32.length, 24000);
+                audioBuffer.getChannelData(0).set(float32);
+                
+                // Calculate when to start this chunk
+                const currentTime = outputAudioContext.currentTime;
+                
+                // If we're falling behind, add a larger buffer
+                if (nextStartTime < currentTime) {
+                    console.warn(`⚠️ Audio timing drift detected. Adjusting... (${(currentTime - nextStartTime).toFixed(3)}s behind)`);
+                    nextStartTime = currentTime + 0.1;
+                }
+                
+                // Play the audio at the scheduled time
+                const source = outputAudioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(outputAudioContext.destination);
+                
+                const scheduledTime = nextStartTime;
+                const chunkDuration = audioBuffer.duration;
+                
+                // Clean up when this chunk finishes
+                source.onended = () => {
+                    const index = activeAudioSources.indexOf(source);
+                    if (index > -1) {
+                        activeAudioSources.splice(index, 1);
+                    }
+                    console.log(`🔊 Chunk finished. Remaining: ${activeAudioSources.length} sources, Queue: ${audioBufferQueue.length} chunks`);
+                };
+                
+                activeAudioSources.push(source);
+                source.start(scheduledTime);
+                console.log(`▶️ Playing chunk at ${scheduledTime.toFixed(3)}s, duration: ${chunkDuration.toFixed(3)}s, active: ${activeAudioSources.length}`);
+                
+                // Update next start time
+                nextStartTime += chunkDuration;
+                
+            } catch (error) {
+                console.error("Error playing audio chunk:", error);
+            }
+        }
+
+        let audioContext = null;
+        let mediaStreamSource = null;
+        let processorNode = null;
+        let outputAudioContext = null;
+        let audioQueue = [];
+        let isPlaying = false;
+        let nextStartTime = 0;
+        let activeAudioSources = [];
+        let audioBufferQueue = [];
+        let isProcessingQueue = false;
+
+        async function startContinuousAudioCapture() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: 24000,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+                
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+                mediaStreamSource = audioContext.createMediaStreamSource(stream);
+                
+                // Create a ScriptProcessorNode for audio processing
+                const bufferSize = 4096;
+                processorNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+                
+                processorNode.onaudioprocess = (e) => {
+                    if (!realtimeWebSocket || realtimeWebSocket.readyState !== WebSocket.OPEN) {
+                        return;
+                    }
+                    
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    // Convert Float32 to Int16 PCM
+                    const pcm16 = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        const s = Math.max(-1, Math.min(1, inputData[i]));
+                        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    
+                    // Convert to base64
+                    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
+                    
+                    // Send audio data
+                    const message = {
+                        type: "input_audio_buffer.append",
+                        audio: base64Audio
+                    };
+                    
+                    realtimeWebSocket.send(JSON.stringify(message));
+                };
+                
+                mediaStreamSource.connect(processorNode);
+                processorNode.connect(audioContext.destination);
+                
+                console.log("Started continuous audio capture");
+                
+            } catch (error) {
+                console.error("Error starting audio capture:", error);
+                updateUI("Mic access denied");
+            }
+        }
+        
+        function stopContinuousAudioCapture() {
+            if (processorNode) {
+                processorNode.disconnect();
+                processorNode = null;
+            }
+            if (mediaStreamSource) {
+                mediaStreamSource.disconnect();
+                mediaStreamSource.mediaStream.getTracks().forEach(track => track.stop());
+                mediaStreamSource = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            console.log("Stopped continuous audio capture");
+        }
+        
+        async function listenForNextCommand() {
+            updateUI("Listening...", true, false);
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                    clearTimeout(silenceTimeout);
+                    silenceTimeout = setTimeout(() => {
+                        if (mediaRecorder.state === 'recording') {
+                            mediaRecorder.stop();
+                        }
+                    }, 1500);
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    // Stop the microphone track to turn off the browser's recording indicator
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    
+                    if (audioBlob.size > 100) {
+                        // Send audio to Realtime session
+                        await sendAudioToRealtime(audioBlob);
+                    } else {
+                        console.log("No speech detected, listening again.");
+                        listenForNextCommand();
+                    }
+                };
+
+                mediaRecorder.start();
+                // Set an initial timer in case the user says nothing
+                silenceTimeout = setTimeout(() => {
+                    if (mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
+                }, 2000); 
+
+            } catch (error) {
+                console.error("Microphone error:", error);
+                stopConversation();
+                updateUI("Mic access denied");
+            }
+        }
+
+        function stopConversation() {
+            stopContinuousAudioCapture();
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+            if (audioPlayer) {
+                audioPlayer.pause();
+                // Remove any pending event listeners to prevent loops
+                audioPlayer.removeEventListener('ended', listenForNextCommand);
+            }
+            if (realtimeWebSocket) {
+                realtimeWebSocket.close();
+                realtimeWebSocket = null;
+            }
+            clearTimeout(silenceTimeout);
+            updateUI(""); // Reset UI to default
+            console.log("Conversation stopped by user.");
+        }
+    </script>
+</body>
+</html>
+

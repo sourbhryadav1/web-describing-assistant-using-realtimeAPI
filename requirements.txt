@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+starlette
+anyio
+openai
+sounddevice
+numpy
+dotenv
+beautifulsoup4
+pydantic
+aiohttp
+bs4
+python-multipart
+websockets
