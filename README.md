@@ -899,8 +899,6 @@ If you find this project useful, please consider giving it a ⭐ on GitHub!
 
 <div align="center">
 
-**Built with ❤️ using OpenAI Realtime API**
-
 [⬆ Back to Top](#-intelligent-voice-assistant-agent)
 
 </div>
