@@ -212,8 +212,8 @@ Browser → Speaker: Playback audio
 #### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/voice-assistant-agent.git
-cd voice-assistant-agent
+git clone https://github.com/sourbhryadav1/web-describing-assistant-using-realtimeAPI.git
+cd web-describing-assistant-using-realtimeAPI
 ```
 
 #### 2. Create Virtual Environment
