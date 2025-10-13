@@ -15,7 +15,7 @@ if not OPENAI_API_KEY:
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 
-async def text_to_speech_stream(text_to_speak: str, model: str = "tts-1", voice: str = "nova"):
+async def text_to_speech_stream(text_to_speak: str, model: str = "tts-1", voice: str = "shimmer"):
     """
     Converts text into an audio stream using OpenAI's TTS API.
     This is an async generator that yields audio chunks.

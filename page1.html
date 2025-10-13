@@ -287,41 +287,41 @@
                 };
             } else {
                 // Fallback: fetch summary if not preloaded
-                isSpeaking = true;
-                updateUI(true, 'Summarizing...');
+            isSpeaking = true;
+            updateUI(true, 'Summarizing...');
 
-                try {
-                    const response = await fetch('http://127.0.0.1:5000/summarize-and-speak', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
+            try {
+                const response = await fetch('http://127.0.0.1:5000/summarize-and-speak', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
                         body: JSON.stringify({ page_name: 'page1.html' }),
-                    });
+                });
 
-                    if (!response.ok) {
-                        throw new Error(`Server responded with ${response.status}`);
-                    }
+                if (!response.ok) {
+                    throw new Error(`Server responded with ${response.status}`);
+                }
 
-                    const audioBlob = await response.blob();
-                    const audioUrl = URL.createObjectURL(audioBlob);
-                    
-                    audioPlayer.src = audioUrl;
-                    audioPlayer.play();
-                    updateUI(true, 'Speaking...');
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                
+                audioPlayer.src = audioUrl;
+                audioPlayer.play();
+                updateUI(true, 'Speaking...');
 
-                    audioPlayer.onended = () => {
-                        isSpeaking = false;
-                        updateUI(false, '');
+                audioPlayer.onended = () => {
+                    isSpeaking = false;
+                    updateUI(false, '');
                         URL.revokeObjectURL(audioUrl);
                         console.log("Summary finished. Creating Realtime session.");
                         createRealtimeSession();
-                    };
+                };
 
-                } catch (error) {
-                    console.error('Error fetching or playing audio:', error);
-                    updateUI(false, 'Error');
-                    isSpeaking = false;
+            } catch (error) {
+                console.error('Error fetching or playing audio:', error);
+                updateUI(false, 'Error');
+                isSpeaking = false;
                 }
             }
         });
@@ -376,8 +376,6 @@
                         page_name: 'page1.html'
                     }));
                     console.log("Sent client_secret, model, and page_name to proxy");
-                    updateUI(false, 'Listening...');
-                    startListening();
                 };
                 
                 realtimeWebSocket.onmessage = (event) => {
@@ -408,30 +406,169 @@
                     break;
                 case 'session.updated':
                     console.log("Session updated successfully");
+                    // Session is ready, start listening and init audio playback
+                    if (!outputAudioContext) {
+                        outputAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+                    }
+                    updateUI(false, 'Listening...');
+                    startContinuousAudioCapture();
                     break;
-                case 'conversation.item.input_audio_buffer.speech_started':
+                case 'input_audio_buffer.speech_started':
                     console.log("User started speaking");
+                    updateUI(false, 'Listening...');
                     break;
-                case 'conversation.item.input_audio_buffer.speech_stopped':
+                case 'input_audio_buffer.speech_stopped':
                     console.log("User stopped speaking");
+                    updateUI(false, 'Processing...');
                     break;
-                case 'conversation.item.output_audio_buffer.speech_started':
-                    console.log("Assistant started speaking");
+                case 'response.created':
+                    // Reset audio timing and queue for new response
+                    audioBufferQueue = [];
+                    if (outputAudioContext) {
+                        nextStartTime = outputAudioContext.currentTime + 0.15;
+                    }
+                    isAssistantSpeaking = true;
                     updateUI(false, 'Speaking...');
                     break;
-                case 'conversation.item.output_audio_buffer.speech_stopped':
-                    console.log("Assistant finished speaking");
-                    updateUI(false, 'Listening...');
-                    startListening();
+                case 'response.audio_transcript.delta':
+                    // Log what the AI is saying
+                    if (data.delta) {
+                        console.log("AI speaking:", data.delta);
+                    }
+                    break;
+                case 'response.audio_transcript.done':
+                    // Log complete transcript
+                    if (data.transcript) {
+                        console.log("🗣️ AI (complete):", data.transcript);
+                    }
+                    break;
+                case 'conversation.item.input_audio_transcription.completed':
+                    // Log what user said
+                    if (data.transcript) {
+                        console.log("👤 You said:", data.transcript);
+                    }
+                    break;
+                case 'response.audio.delta':
+                    // Queue audio chunk for smoother playback
+                    if (data.delta) {
+                        audioBufferQueue.push(data.delta);
+                        if (!isProcessingQueue) {
+                            processAudioQueue();
+                        }
+                    }
+                    break;
+                case 'response.audio.done':
+                    console.log(`📊 Response complete. Queue: ${audioBufferQueue.length} chunks, Active: ${activeAudioSources.length} sources`);
+                    // Process any remaining chunks in queue
+                    if (audioBufferQueue.length > 0 && !isProcessingQueue) {
+                        processAudioQueue();
+                    }
+                    // Wait for all audio to finish playing
+                    const waitForCompletion = setInterval(() => {
+                        if (activeAudioSources.length === 0 && audioBufferQueue.length === 0 && !isProcessingQueue) {
+                            clearInterval(waitForCompletion);
+                            console.log("✅ All audio finished playing");
+                            isAssistantSpeaking = false;
+                            updateUI(false, 'Listening...');
+                        }
+                    }, 100);
                     break;
                 case 'error':
                     console.error("Realtime API error:", data.error);
                     updateUI(false, 'Error');
                     break;
                 default:
-                    console.log("Received message:", data.type);
+                    // Log other messages for debugging
+                    if (data.type.startsWith('response.audio')) {
+                        console.log("Received message:", data.type);
+                    }
             }
         }
+        
+        async function processAudioQueue() {
+            if (isProcessingQueue || audioBufferQueue.length === 0) return;
+            
+            isProcessingQueue = true;
+            
+            while (audioBufferQueue.length > 0) {
+                const base64Audio = audioBufferQueue.shift();
+                await playAudioChunk(base64Audio);
+                // Small delay between chunks to prevent overwhelming the audio context
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            
+            isProcessingQueue = false;
+        }
+        
+        async function playAudioChunk(base64Audio) {
+            try {
+                if (!outputAudioContext) {
+                    outputAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+                    nextStartTime = outputAudioContext.currentTime + 0.2;
+                }
+                
+                // Decode base64 to Int16 PCM
+                const binaryString = atob(base64Audio);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                const pcm16 = new Int16Array(bytes.buffer);
+                
+                // Convert Int16 to Float32
+                const float32 = new Float32Array(pcm16.length);
+                for (let i = 0; i < pcm16.length; i++) {
+                    float32[i] = pcm16[i] / (pcm16[i] < 0 ? 0x8000 : 0x7FFF);
+                }
+                
+                // Create audio buffer
+                const audioBuffer = outputAudioContext.createBuffer(1, float32.length, 24000);
+                audioBuffer.getChannelData(0).set(float32);
+                
+                // Calculate when to start this chunk
+                const currentTime = outputAudioContext.currentTime;
+                
+                // If we're falling behind, add a larger buffer
+                if (nextStartTime < currentTime) {
+                    console.warn(`⚠️ Audio timing drift detected. Adjusting... (${(currentTime - nextStartTime).toFixed(3)}s behind)`);
+                    nextStartTime = currentTime + 0.1;
+                }
+                
+                // Play the audio at the scheduled time
+                const source = outputAudioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(outputAudioContext.destination);
+                
+                const scheduledTime = nextStartTime;
+                const chunkDuration = audioBuffer.duration;
+                
+                // Clean up when this chunk finishes
+                source.onended = () => {
+                    const index = activeAudioSources.indexOf(source);
+                    if (index > -1) {
+                        activeAudioSources.splice(index, 1);
+                    }
+                    console.log(`🔊 Chunk finished. Remaining: ${activeAudioSources.length} sources, Queue: ${audioBufferQueue.length} chunks`);
+                };
+                
+                activeAudioSources.push(source);
+                source.start(scheduledTime);
+                console.log(`▶️ Playing chunk at ${scheduledTime.toFixed(3)}s, duration: ${chunkDuration.toFixed(3)}s, active: ${activeAudioSources.length}`);
+                
+                // Update next start time
+                nextStartTime += chunkDuration;
+                
+            } catch (error) {
+                console.error("Error playing audio chunk:", error);
+            }
+        }
+
+        let outputAudioContext = null;
+        let audioBufferQueue = [];
+        let isProcessingQueue = false;
+        let nextStartTime = 0;
+        let activeAudioSources = [];
 
         async function sendAudioToRealtime(audioBlob) {
             if (!realtimeWebSocket || realtimeWebSocket.readyState !== WebSocket.OPEN) {
@@ -466,6 +603,87 @@
             } catch (error) {
                 console.error("Error sending audio to Realtime:", error);
             }
+        }
+
+        let audioContext = null;
+        let mediaStreamSource = null;
+        let processorNode = null;
+        let isAssistantSpeaking = false;
+
+        async function startContinuousAudioCapture() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: 24000,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+                
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+                mediaStreamSource = audioContext.createMediaStreamSource(stream);
+                
+                // Create a ScriptProcessorNode for audio processing
+                const bufferSize = 4096;
+                processorNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+                
+                processorNode.onaudioprocess = (e) => {
+                    if (!realtimeWebSocket || realtimeWebSocket.readyState !== WebSocket.OPEN) {
+                        return;
+                    }
+                    
+                    // Block user input when assistant is speaking
+                    if (isAssistantSpeaking) {
+                        return;
+                    }
+                    
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    // Convert Float32 to Int16 PCM
+                    const pcm16 = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        const s = Math.max(-1, Math.min(1, inputData[i]));
+                        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    
+                    // Convert to base64
+                    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
+                    
+                    // Send audio data
+                    const message = {
+                        type: "input_audio_buffer.append",
+                        audio: base64Audio
+                    };
+                    
+                    realtimeWebSocket.send(JSON.stringify(message));
+                };
+                
+                mediaStreamSource.connect(processorNode);
+                processorNode.connect(audioContext.destination);
+                
+                console.log("Started continuous audio capture");
+                
+            } catch (error) {
+                console.error("Error starting audio capture:", error);
+                updateUI(false, 'Mic access denied');
+            }
+        }
+        
+        function stopContinuousAudioCapture() {
+            if (processorNode) {
+                processorNode.disconnect();
+                processorNode = null;
+            }
+            if (mediaStreamSource) {
+                mediaStreamSource.disconnect();
+                mediaStreamSource.mediaStream.getTracks().forEach(track => track.stop());
+                mediaStreamSource = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            console.log("Stopped continuous audio capture");
         }
 
         async function startListening() {
@@ -511,6 +729,7 @@
         }
 
         function stopRealtimeSession() {
+            stopContinuousAudioCapture();
             if (mediaRecorder && mediaRecorder.state === 'recording') {
                 mediaRecorder.stop();
             }
@@ -518,6 +737,12 @@
                 realtimeWebSocket.close();
                 realtimeWebSocket = null;
             }
+            if (outputAudioContext) {
+                outputAudioContext.close();
+                outputAudioContext = null;
+            }
+            audioBufferQueue = [];
+            activeAudioSources = [];
             clearTimeout(silenceTimeout);
             updateUI(false, '');
             console.log("Realtime session stopped by user.");

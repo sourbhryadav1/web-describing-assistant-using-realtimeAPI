@@ -310,6 +310,7 @@
                     if (outputAudioContext) {
                         nextStartTime = outputAudioContext.currentTime + 0.15; // Slightly larger initial buffer
                     }
+                    isAssistantSpeaking = true;
                     updateUI("Speaking...", true, false);
                     break;
                 case 'response.audio_transcript.delta':
@@ -350,6 +351,7 @@
                         if (activeAudioSources.length === 0 && audioBufferQueue.length === 0 && !isProcessingQueue) {
                             clearInterval(waitForCompletion);
                             console.log("✅ All audio finished playing");
+                            isAssistantSpeaking = false;
                             updateUI("Listening...", true, false);
                         }
                     }, 100);
@@ -448,6 +450,7 @@
         let audioContext = null;
         let mediaStreamSource = null;
         let processorNode = null;
+        let isAssistantSpeaking = false;
         let outputAudioContext = null;
         let audioQueue = [];
         let isPlaying = false;
@@ -476,6 +479,11 @@
                 
                 processorNode.onaudioprocess = (e) => {
                     if (!realtimeWebSocket || realtimeWebSocket.readyState !== WebSocket.OPEN) {
+                        return;
+                    }
+                    
+                    // Block user input when assistant is speaking
+                    if (isAssistantSpeaking) {
                         return;
                     }
                     

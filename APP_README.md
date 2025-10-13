@@ -1,8 +1,23 @@
 # Flutter App Integration Guide - Voice Assistant Backend
 
+<div align="center">
+
+![Flutter](https://img.shields.io/badge/Flutter-3.0+-02569B.svg?logo=flutter)
+![Dart](https://img.shields.io/badge/Dart-3.0+-0175C2.svg?logo=dart)
+![iOS](https://img.shields.io/badge/iOS-Compatible-000000.svg?logo=apple)
+![Android](https://img.shields.io/badge/Android-Compatible-3DDC84.svg?logo=android)
+
+**Complete Guide for Building Native Mobile Voice Assistant Apps**
+
+</div>
+
+---
+
 ## Overview
 
-This guide explains how to integrate the existing FastAPI voice assistant backend with a Flutter native mobile application. The implementation provides real-time voice conversation capabilities using OpenAI's Realtime API.
+This guide explains how to integrate the existing FastAPI voice assistant backend with a **Flutter native mobile application**. The implementation provides real-time voice conversation capabilities using OpenAI's Realtime API.
+
+> **Note:** This is a companion guide to the main [README.md](./README.md). The backend is the same as the web demo – only the frontend changes to Flutter for native mobile experiences.
 
 ---
 
@@ -840,7 +855,39 @@ For issues or questions:
 
 ---
 
-**Last Updated:** 2025-01-12
+## 🎯 Why Flutter?
+
+While the **demo web interface** (index.html) is great for showcasing the technology, a **Flutter mobile app** provides:
+
+- ✅ **Better Performance:** Native audio processing
+- ✅ **Improved UX:** Smooth animations and transitions
+- ✅ **Offline Capabilities:** Cache and pre-load content
+- ✅ **Push Notifications:** Real-time alerts and updates
+- ✅ **App Store Distribution:** Reach millions of users
+- ✅ **Cross-Platform:** Single codebase for iOS & Android
+
+---
+
+## 🔗 Related Documentation
+
+- [**README.md**](./README.md) - Main project documentation
+- [**JSON_PARSER.md**](./JSON_PARSER.md) - JSON parsing Web vs Flutter
+- [**WEB_VS_FLUTTER_COMPARISON.md**](./WEB_VS_FLUTTER_COMPARISON.md) - Implementation comparison
+
+---
+
+**Last Updated:** January 2025
 **Backend Version:** 1.0.0
 **Compatible Flutter SDK:** >=3.0.0
+**Compatible Dart SDK:** >=3.0.0
+
+---
+
+<div align="center">
+
+**Built for the Voice Assistant Agent Demo Project**
+
+[⬆ Back to Top](#flutter-app-integration-guide---voice-assistant-backend) • [Main README](./README.md)
+
+</div>
 

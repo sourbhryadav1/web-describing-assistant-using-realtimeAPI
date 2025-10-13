@@ -50,7 +50,7 @@ app.add_middleware(
 )
 
 # --- CORE LOGIC: Parse HTML to get plain text ---
-def get_structured_page_data(filename: str):
+def get_structured_page_data_for_summarize_and_speak(filename: str):
     """
     Reads index.html and extracts structured data about its purpose,
     navigation, and actions.
@@ -92,11 +92,84 @@ def get_structured_page_data(filename: str):
         raise HTTPException(status_code=500, detail=f"An error occurred while parsing HTML: {str(e)}")
 
 
+def get_structured_page_data_for_realtime(filename: str):
+    """
+    Extracts a comprehensive set of details from the HTML content of a webpage.
+    """
+    file_path = os.path.join(BASE_DIR, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"File '{filename}' not found at path '{file_path}'.")
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # 1. Page Title (already good)
+        title = soup.find('title').get_text(strip=True) if soup.find('title') else "Untitled Page"
+
+        # 2. Meta Information (Description and Keywords are very important)
+        description = soup.find('meta', attrs={'name': 'description'})
+        keywords = soup.find('meta', attrs={'name': 'keywords'})
+        
+        meta_description = description['content'] if description and description.has_attr('content') else "N/A"
+        meta_keywords = keywords['content'] if keywords and keywords.has_attr('content') else "N/A"
+
+        # 3. All Headings (h1 through h6) to understand structure
+        all_headings = {f'h{i}': [] for i in range(1, 7)}
+        for i in range(1, 7):
+            for heading in soup.find_all(f'h{i}'):
+                all_headings[f'h{i}'].append(heading.get_text(strip=True))
+
+        # 4. All Links on the entire page, not just in <nav>
+        # We store them in a dictionary to keep text and URL together
+        all_links = {}
+        for link in soup.find_all('a', href=True):
+            text = link.get_text(strip=True)
+            href = link['href']
+            if text and href and not href.startswith('#'): # Ignore empty text and anchor links
+                all_links[text] = href
+
+        # 5. Extract all plain text content for context
+        # Use a separator to make the text more readable
+        full_text_content = soup.get_text(separator='\n', strip=True)
+
+        # 6. Extract Image Descriptions (alt text) for accessibility and context
+        image_descriptions = [img['alt'] for img in soup.find_all('img') if img.has_attr('alt') and img['alt']]
+
+        # 7. A more robust way to find "Actions"
+        # Look for buttons and links styled as buttons (e.g., role="button")
+        potential_actions = []
+        for action_tag in soup.find_all(['button', 'a']):
+            text = action_tag.get_text(strip=True)
+            if not text:
+                continue
+            # Check if it's a button tag or an 'a' tag with a button-like role or class
+            if action_tag.name == 'button' or (action_tag.has_attr('role') and 'button' in action_tag['role']):
+                potential_actions.append(text)
+        
+        # --- Combine data into a more structured dictionary ---
+        context = {
+            "title": title,
+            "meta_description": meta_description,
+            "meta_keywords": meta_keywords,
+            "headings": all_headings,
+            "links": all_links,
+            "image_alt_texts": list(set(image_descriptions)), # Use set to get unique descriptions
+            "actions": list(set(potential_actions)), # Use set to get unique actions
+            "full_text": full_text_content
+        }
+        
+        return context, title
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred while parsing HTML: {str(e)}")
+
+
 # --- NEW ENDPOINT: Summarize Text and Convert to Speech ---
 @app.post("/summarize-and-speak")
 async def summarize_and_speak(request: PageRequest):
     print(f"Request received for page: {request.page_name}")
-    page_context, page_title = get_structured_page_data(request.page_name)
+    page_context, page_title = get_structured_page_data_for_summarize_and_speak(request.page_name)
 
     prompt_1_system = """
     You are an expert content analyst. Your task is to create a detailed, structured knowledge summary from a webpage's data. 
@@ -121,7 +194,7 @@ async def summarize_and_speak(request: PageRequest):
     
     prompt_2_system = f"""
     You are a friendly voice assistant. Your goal is to give a quick, helpful overview of the current page, '{page_title}'. 
-    Use the provided 'PAGE KNOWLEDGE BASE' to generate a spoken welcome message that is less than 10 seconds long.
+    Use the provided 'PAGE KNOWLEDGE BASE' to generate a spoken welcome message that must be less than 10 seconds long.
     Your message should cover what the page is about and what the user can do must include the navigation options and headers. 
     Be conversational and end your message with the exact phrase: 'how may I assist you today?'
     ---
@@ -140,62 +213,6 @@ async def summarize_and_speak(request: PageRequest):
     print("Audio generated. Streaming response to client.")
     return StreamingResponse(audio_stream_generator, media_type="audio/mpeg")
 
-    
-@app.post("/voice-chat")
-async def voice_chat(
-    page_name: str = Form(...),
-    audio: UploadFile = File(...)
-):
-    print(f"\n[INFO] Received audio from client for page: {page_name}")
-    
-
-     # --- Step 2: Transcribe the user's speech ---
-    user_text = await transcribe_audio_file(audio.file, audio.filename)
-    if not user_text:
-        raise HTTPException(status_code=500, detail="Failed to transcribe audio.")
-    print(f"[SUCCESS] User said: '{user_text}'")
-    
-    
-    # --- Step 1: Re-generate the knowledge base for context ---
-    print("[INFO] Generating context-specific knowledge base for conversation...")
-    page_context, _ = get_structured_page_data(page_name)
-    prompt_1_system = """
-    You are an expert content analyst. Your task is to create a detailed, structured knowledge summary from a webpage's data.
-    This summary will be the sole source of truth for a conversational voice assistant.
-    Synthesize the provided information into a factual knowledge base.
-    """
-    detailed_knowledge_base = await chat_with_openai(f"Page info:\n{page_context}", system_prompt=prompt_1_system)
-    if not detailed_knowledge_base:
-        raise HTTPException(status_code=500, detail="Failed to generate knowledge base for conversation.")
-    print("[SUCCESS] Knowledge base for conversation is ready.")
-    
-
-    # --- Step 3: Construct the final conversational prompt ---
-    prompt_2_system = f"""
-    You are a helpful and friendly voice assistant for a webpage. Your two most important rules are:
-    1.  **Be Extremely Brief:** All of your spoken responses MUST be very short and take less than 10 seconds to say (around 25-30 words).
-    2.  **Stay On Topic:** Your knowledge is strictly limited to the information in the 'PAGE KNOWLEDGE BASE' below. Do NOT answer any questions or discuss any topics outside of this knowledge base.
-
-    If the user asks about anything not mentioned in the knowledge base (like the weather, history, or general knowledge), you MUST use this exact fallback response: "I can only answer questions about the content on this page. You could ask me about our core technologies, for example."
-
-    Always follow these rules.
-    ---
-    PAGE KNOWLEDGE BASE:
-    {detailed_knowledge_base}
-    ---
-    """
-    assistant_text = await chat_with_openai(user_text, system_prompt=prompt_2_system)
-    if not assistant_text:
-        raise HTTPException(status_code=500, detail="Failed to get chat response.")
-    print(f"[SUCCESS] Assistant response: '{assistant_text}'")
-
-    # --- Step 4: Convert the response back to speech ---
-    audio_stream_generator = text_to_speech_stream(assistant_text)
-    print("[SUCCESS] Audio generator created. Streaming to client.")
-    return StreamingResponse(audio_stream_generator, media_type="audio/mpeg")
-
-
-
 
 @app.post("/create-talk-session")
 async def create_talk_session(request: PageRequest):
@@ -207,7 +224,7 @@ async def create_talk_session(request: PageRequest):
     
     try:
         # Get page context for the session
-        page_context, page_title = get_structured_page_data(request.page_name)
+        page_context, page_title = get_structured_page_data_for_realtime(request.page_name)
         
         # Create Realtime session with page-specific context
         session_info = await create_realtime_session(page_context, page_title)
@@ -246,7 +263,7 @@ async def websocket_proxy(websocket: WebSocket):
         print(f"[INFO] Connecting to OpenAI Realtime API with client_secret: {client_secret}, model: {model}")
         
         # Get page context for instructions
-        page_context, page_title = get_structured_page_data(page_name)
+        page_context, page_title = get_structured_page_data_for_realtime(page_name)
         
         # Connect to OpenAI Realtime API with authentication using main API key
         # Note: The ephemeral session approach seems to have version mismatch issues
@@ -273,18 +290,19 @@ async def websocket_proxy(websocket: WebSocket):
                 "session": {
                     "modalities": ["text", "audio"],
                     "instructions": f"""You are a helpful voice assistant for the webpage '{page_title}'. 
-Your knowledge is strictly limited to the information provided below.
+                    Your knowledge is strictly limited to the information provided below.
 
-PAGE CONTEXT:
-{page_context}
+                    PAGE CONTEXT:
+                    {page_context}
 
-Rules:
-1. Be brief but complete - keep responses under 15 seconds, but always finish your sentences
-2. Only answer questions about the page content above
-3. If asked about anything not on this page, say: "I can only answer questions about the content on this page. You could ask me about our core technologies, for example."
-4. Be conversational and helpful
-5. Always complete your sentences - don't cut off mid-thought
-""",
+                    Rules:
+                    1. Be brief but complete - keep responses under 7 seconds,  and make it as to the point as possible.
+                    2. Only answer questions about the page content above
+                    3. If asked about anything not on this page, say: "I can only answer questions about the content on this page. You could ask me about our core technologies, for example."
+                    4. Be conversational and helpful
+                    5. Always give responce to the point not a long story.
+                    6. If the user language is hindi, speek hindi but not perfect hindi that user wont understand, use basic hindi only.
+                    """,
                     "voice": "shimmer",
                     "input_audio_format": "pcm16",
                     "output_audio_format": "pcm16",
