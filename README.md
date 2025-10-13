@@ -849,9 +849,8 @@ SOFTWARE.
 
 ### Questions or Issues?
 
-- **GitHub Issues:** [Create an issue](https://github.com/yourusername/voice-assistant-agent/issues)
-- **Email:** your.email@example.com
-- **Twitter:** [@yourhandle](https://twitter.com/yourhandle)
+- **GitHub Issues:** [Create an issue](https://github.com/sourbhryadav1/web-describing-assistant-using-realtimeAPI/issues)
+- **Email:** sourbhr12@gmail.com
 
 ### Resources
 
