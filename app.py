@@ -127,18 +127,16 @@ def get_structured_page_data_for_realtime(filename: str):
         for link in soup.find_all('a', href=True):
             text = link.get_text(strip=True)
             href = link['href']
-            if text and href and not href.startswith('#'): # Ignore empty text and anchor links
+            if text and href and not href.startswith('#'):
                 all_links[text] = href
 
-        # 5. Extract all plain text content for context
-        # Use a separator to make the text more readable
+        # 5. Extract all plain text content for context, Use a separator to make the text more readable
         full_text_content = soup.get_text(separator='\n', strip=True)
 
         # 6. Extract Image Descriptions (alt text) for accessibility and context
         image_descriptions = [img['alt'] for img in soup.find_all('img') if img.has_attr('alt') and img['alt']]
 
         # 7. A more robust way to find "Actions"
-        # Look for buttons and links styled as buttons (e.g., role="button")
         potential_actions = []
         for action_tag in soup.find_all(['button', 'a']):
             text = action_tag.get_text(strip=True)
@@ -155,8 +153,8 @@ def get_structured_page_data_for_realtime(filename: str):
             "meta_keywords": meta_keywords,
             "headings": all_headings,
             "links": all_links,
-            "image_alt_texts": list(set(image_descriptions)), # Use set to get unique descriptions
-            "actions": list(set(potential_actions)), # Use set to get unique actions
+            "image_alt_texts": list(set(image_descriptions)),
+            "actions": list(set(potential_actions)),
             "full_text": full_text_content
         }
         
@@ -165,7 +163,7 @@ def get_structured_page_data_for_realtime(filename: str):
         raise HTTPException(status_code=500, detail=f"An error occurred while parsing HTML: {str(e)}")
 
 
-# --- NEW ENDPOINT: Summarize Text and Convert to Speech ---
+# Summarize Text and Convert to Speech ---
 @app.post("/summarize-and-speak")
 async def summarize_and_speak(request: PageRequest):
     print(f"Request received for page: {request.page_name}")
@@ -266,8 +264,6 @@ async def websocket_proxy(websocket: WebSocket):
         page_context, page_title = get_structured_page_data_for_realtime(page_name)
         
         # Connect to OpenAI Realtime API with authentication using main API key
-        # Note: The ephemeral session approach seems to have version mismatch issues
-        # Using direct API key authentication instead
         openai_ws_url = f"wss://api.openai.com/v1/realtime?model={model}"
         
         # Required headers for Realtime API
