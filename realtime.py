@@ -59,7 +59,8 @@ class RealtimeVoiceAssistant:
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        print(f"[ERROR] Failed to create session: {response.status} - {error_text}")
+                        # debuggers ---->
+                        # print(f"[ERROR] Failed to create session: {response.status} - {error_text}")
                         return None
                     
                     session_data = await response.json()
@@ -68,14 +69,14 @@ class RealtimeVoiceAssistant:
                     self.session_id = session_data["id"]
                     self.model = session_data.get("model", "gpt-realtime")
                     
-                    print(f"[SUCCESS] Created Realtime session: {self.session_id} with model: {self.model}")
+                    # print(f"[SUCCESS] Created Realtime session: {self.session_id} with model: {self.model}")
                     return {
                         "client_secret": self.client_secret,
                         "model": self.model
                     }
             
         except Exception as e:
-            print(f"[ERROR] Failed to create Realtime session: {e}")
+            # print(f"[ERROR] Failed to create Realtime session: {e}")
             return None
     
     async def connect_to_session(self, client_secret: str):
@@ -89,13 +90,13 @@ class RealtimeVoiceAssistant:
             self.websocket = await websockets.connect(ws_url)
             self.is_connected = True
             
-            print("[SUCCESS] Connected to Realtime WebSocket")
+            # print("[SUCCESS] Connected to Realtime WebSocket")
             
             # Start listening for messages
             await self.listen_for_messages()
             
         except Exception as e:
-            print(f"[ERROR] Failed to connect to Realtime session: {e}")
+            # print(f"[ERROR] Failed to connect to Realtime session: {e}")
             self.is_connected = False
             return False
     
@@ -108,25 +109,25 @@ class RealtimeVoiceAssistant:
                 data = json.loads(message)
                 
                 if data.get("type") == "conversation.item.input_audio_buffer.speech_started":
-                    print("[INFO] User started speaking")
+                    # print("[INFO] User started speaking")
                     
                 elif data.get("type") == "conversation.item.input_audio_buffer.speech_stopped":
-                    print("[INFO] User stopped speaking")
+                    # print("[INFO] User stopped speaking")
                     
                 elif data.get("type") == "conversation.item.output_audio_buffer.speech_started":
-                    print("[INFO] Assistant started speaking")
+                    # print("[INFO] Assistant started speaking")
                     
                 elif data.get("type") == "conversation.item.output_audio_buffer.speech_stopped":
-                    print("[INFO] Assistant finished speaking")
+                    # print("[INFO] Assistant finished speaking")
                     
                 elif data.get("type") == "error":
-                    print(f"[ERROR] Realtime API error: {data.get('error')}")
+                    # print(f"[ERROR] Realtime API error: {data.get('error')}")
                     
         except websockets.exceptions.ConnectionClosed:
-            print("[INFO] WebSocket connection closed")
+            # print("[INFO] WebSocket connection closed")
             self.is_connected = False
         except Exception as e:
-            print(f"[ERROR] Error listening for messages: {e}")
+            # print(f"[ERROR] Error listening for messages: {e}")
             self.is_connected = False
     
     async def send_audio(self, audio_data: bytes):
@@ -151,11 +152,11 @@ class RealtimeVoiceAssistant:
             }
             
             await self.websocket.send(json.dumps(message))
-            print("[SUCCESS] Audio sent to Realtime API")
+            # print("[SUCCESS] Audio sent to Realtime API")
             return True
             
         except Exception as e:
-            print(f"[ERROR] Failed to send audio: {e}")
+            # print(f"[ERROR] Failed to send audio: {e}")
             return False
     
     async def commit_audio(self):
@@ -171,11 +172,11 @@ class RealtimeVoiceAssistant:
             }
             
             await self.websocket.send(json.dumps(message))
-            print("[SUCCESS] Audio buffer committed")
+            # print("[SUCCESS] Audio buffer committed")
             return True
             
         except Exception as e:
-            print(f"[ERROR] Failed to commit audio: {e}")
+            # print(f"[ERROR] Failed to commit audio: {e}")
             return False
     
     async def disconnect(self):
@@ -185,7 +186,7 @@ class RealtimeVoiceAssistant:
         if self.websocket:
             await self.websocket.close()
             self.is_connected = False
-            print("[INFO] Disconnected from Realtime session")
+            # print("[INFO] Disconnected from Realtime session")
     
     async def cleanup_session(self):
         """
@@ -194,9 +195,9 @@ class RealtimeVoiceAssistant:
         try:
             if self.session_id:
                 await client.beta.realtime.sessions.delete(self.session_id)
-                print(f"[SUCCESS] Cleaned up session: {self.session_id}")
+                # print(f"[SUCCESS] Cleaned up session: {self.session_id}")
         except Exception as e:
-            print(f"[ERROR] Failed to cleanup session: {e}")
+            # print(f"[ERROR] Failed to cleanup session: {e}")
 
 
 # Global instance for the voice assistant
